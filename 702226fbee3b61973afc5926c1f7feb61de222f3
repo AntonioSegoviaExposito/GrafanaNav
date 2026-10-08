@@ -1,0 +1,31 @@
+.gitignore
+  s_cb49bf6f8c0459::t_d3e9c16f69ecf7 1
+README.md
+  s_cb49bf6f8c0459::t_f1dc1494ade91d 1-90
+package.json
+  s_cb49bf6f8c0459::t_4f1469f4f5e9b1 1-14
+pnpm-lock.yaml
+  s_cb49bf6f8c0459::t_5a3764d4c52d20 1-789
+src/firefox.js
+  s_cb49bf6f8c0459::t_fd058a5879e3fa 1-78
+src/grafana.js
+  s_cb49bf6f8c0459::t_212d4f7e621809 1-143
+src/server.js
+  s_cb49bf6f8c0459::t_cb658aad78666a 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "702226fbee3b61973afc5926c1f7feb61de222f3",
+  "prompts": {},
+  "sessions": {
+    "s_cb49bf6f8c0459": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_cb49bf6f8c045Iy3de5M9HxyET",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "antoniose <antoniose@ext.inditex.com>"
+    }
+  }
+}
