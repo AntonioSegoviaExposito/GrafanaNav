@@ -1,0 +1,19 @@
+src/server.js
+  s_e6686a2783b3bc::t_0835a4a1b789d3 5,12-35,43,48-49,58-59,99,140-143,168,179-180,185,188,190-191,193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f1b0b40a1c03942413f9a4ad7515cd78051f2f55",
+  "prompts": {},
+  "sessions": {
+    "s_e6686a2783b3bc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_cb49bf6f8ffeIT4eIy3de5M9Hx",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "antoniose <antoniose@ext.inditex.com>"
+    }
+  }
+}
