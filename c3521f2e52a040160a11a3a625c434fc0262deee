@@ -1,0 +1,19 @@
+src/grafana.js
+  s_e6686a2783b3bc::t_79df78a6c1d2d8 2,50-64,73,81-85,135-238,242-251,259-270,272,278,283
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c3521f2e52a040160a11a3a625c434fc0262deee",
+  "prompts": {},
+  "sessions": {
+    "s_e6686a2783b3bc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_cb49bf6f8ffeIT4eIy3de5M9Hx",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "antoniose <antoniose@ext.inditex.com>"
+    }
+  }
+}
