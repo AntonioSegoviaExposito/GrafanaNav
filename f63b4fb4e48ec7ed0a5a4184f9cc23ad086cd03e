@@ -1,0 +1,19 @@
+README.md
+  s_e6686a2783b3bc::t_3b49a33cb75bf4 55,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f63b4fb4e48ec7ed0a5a4184f9cc23ad086cd03e",
+  "prompts": {},
+  "sessions": {
+    "s_e6686a2783b3bc": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_cb49bf6f8ffeIT4eIy3de5M9Hx",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "antoniose <antoniose@ext.inditex.com>"
+    }
+  }
+}
