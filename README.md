@@ -52,9 +52,9 @@ The cookie is cached and reused until Grafana rejects it; then it is read again 
 |------|------|
 | `loki_datasources` | Loki datasources (uid, name) and which one is used by default |
 | `loki_labels` | Label names, or the values of one label, in a time range; optionally only for the streams of a selector and filtered by text |
-| `loki_query` | Any LogQL query: log lines (with stream labels and paging) or metric series; optional Explore link |
+| `loki_query` | Any LogQL query: log lines (with stream labels, tail/middle truncation, optional regex `extract`, and paging) or metric series; optional Explore link |
 
-Times accept `now`, `now-30m` (units `s m h d w`), ISO dates (without zone = local time) and epoch seconds, milliseconds or nanoseconds. The default range is the last hour.
+Times accept `now`, `now-30m` (units `s m h d w`), short dates (`2026-02-11` or `11/02/2026`, spanning 00:00:00.000 in `from` to 23:59:59.999 in `to` local time), ISO timestamps (without zone = local time), and epoch seconds, milliseconds or nanoseconds. Multi-day ranges exceeding Loki's `max_query_length` are transparently split into sub-windows. The default range is the last hour.
 
 ```
 STREAMS  ·  Loki  ·  2026-10-08 11:51:22.363 → 2026-10-08 12:06:22.363 Europe/Madrid
