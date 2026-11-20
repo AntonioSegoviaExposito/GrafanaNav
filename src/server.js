@@ -2,14 +2,37 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { BASE, datasource, exploreUrl, listDatasources, loki, toNs } from './grafana.js';
+import { BASE, datasource, exploreUrl, listDatasources, lokiLabels, lokiRange, toNs } from './grafana.js';
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const MAX_VALUES = 500;
 const pad = (n, width = 2) => String(n).padStart(width, '0');
 const nsToMs = (ns) => Number(BigInt(ns) / 1_000_000n);
 const pairsOf = (labels) => Object.entries(labels).map(([k, v]) => `${k}=${JSON.stringify(v)}`);
-const cut = (line, max) => (max && line.length > max ? `${line.slice(0, max)}… [+${line.length - max} chars]` : line);
+function cut(line, max, mode = 'tail') {
+  if (!max || line.length <= max) return line;
+  const omitted = line.length - max;
+  if (mode === 'middle') {
+    const head = Math.ceil(max / 2);
+    return `${line.slice(0, head)}… [+${omitted} chars] …${line.slice(line.length - (max - head))}`;
+  }
+  return `${line.slice(0, max)}… [+${omitted} chars]`;
+}
+
+function compileExtract(pattern) {
+  if (!pattern) return null;
+  try {
+    return new RegExp(pattern, 'g');
+  } catch (e) {
+    throw new Error(`Invalid \`extract\` regex: ${e.message}`);
+  }
+}
+
+function formatLine(line, max, truncate, matcher) {
+  if (!matcher) return cut(line, max, truncate);
+  const hits = Array.from(line.matchAll(matcher), m => m[0]).filter(Boolean);
+  return hits.length ? cut(hits.join('  ⋯  '), max, truncate) : '(no `extract` match in line)';
+}
 
 function stamp(ms) {
   const d = new Date(ms);
@@ -17,11 +40,13 @@ function stamp(ms) {
 }
 
 // Log entries of every stream merged in query order. Labels shared by all streams print once; the rest go to a legend.
-function streams(result, { limit, direction, maxLineLength }) {
+function streams(result, { limit, direction, maxLineLength, truncate, matcher }) {
   const entries = result.flatMap((s, i) => s.values.map(([ns, line]) => ({ ns: BigInt(ns), line, i })));
   if (!entries.length) return ['No log lines match in this range.'];
   const order = direction === 'forward' ? 1 : -1;
   entries.sort((a, b) => order * (a.ns < b.ns ? -1 : a.ns > b.ns ? 1 : 0));
+  const capped = entries.length >= limit;
+  if (entries.length > limit) entries.length = limit;
 
   const pairs = result.map(s => pairsOf(s.stream));
   const common = pairs[0].filter(p => pairs.every(list => list.includes(p)));
@@ -30,8 +55,8 @@ function streams(result, { limit, direction, maxLineLength }) {
   if (common.length) out.push(`labels: {${common.join(', ')}}`);
   if (multi) out.push(...pairs.map((list, i) => `s${i + 1}: {${list.filter(p => !common.includes(p)).join(', ')}}`));
   out.push('');
-  for (const e of entries) out.push(`${stamp(nsToMs(e.ns))}  ${multi ? `s${e.i + 1}  ` : ''}${cut(e.line, maxLineLength).replace(/\n/g, '\n    ')}`);
-  if (entries.length >= limit) {
+  for (const e of entries) out.push(`${stamp(nsToMs(e.ns))}  ${multi ? `s${e.i + 1}  ` : ''}${formatLine(e.line, maxLineLength, truncate, matcher).replace(/\n/g, '\n    ')}`);
+  if (capped) {
     const edge = entries.at(-1).ns;
     out.push('', `Limit of ${limit} lines reached. Next page: same query with ${direction === 'forward' ? 'from' : 'to'}="${edge}" (the boundary line may repeat), or narrow the query.`);
   }
@@ -71,7 +96,7 @@ function tool(name, config, run) {
   });
 }
 
-const TIME = 'now, now-<n><s|m|h|d|w> (e.g. now-30m), an ISO date such as 2026-01-31T10:00:00Z (without zone = local time), or epoch seconds, milliseconds or nanoseconds';
+const TIME = 'now, now-<n><s|m|h|d|w> (e.g. now-30m), a date such as 2026-02-11 or 11/02/2026 (start of day in `from`, end of day in `to`), an ISO timestamp such as 2026-01-31T10:00:00Z (without zone = local time), or epoch seconds, milliseconds or nanoseconds';
 const DATASOURCE = z.string().optional().describe('Loki datasource name or uid, from loki_datasources. Omit to use LOKI_DATASOURCE, or the only or default Loki datasource.');
 const FROM = z.string().optional().describe(`Start of the range (default now-1h): ${TIME}.`);
 const TO = z.string().optional().describe(`End of the range (default now): ${TIME}.`);
@@ -112,8 +137,10 @@ tool(
   },
   async ({ label, selector, contains, from = 'now-1h', to = 'now', datasource: name }) => {
     const ds = await datasource(name);
-    const params = { start: toNs(from), end: toNs(to), ...(selector && { query: selector }) };
-    const { data = [] } = await loki(ds, label ? `label/${encodeURIComponent(label)}/values` : 'labels', params);
+    const start = toNs(from);
+    const end = toNs(to, { endOfDay: true });
+    if (start >= end) throw new Error('`from` must be earlier than `to`.');
+    const { data = [] } = await lokiLabels(ds, label ? `label/${encodeURIComponent(label)}/values` : 'labels', { start, end, query: selector });
     const needle = contains?.toLowerCase();
     const all = needle ? data.filter(v => v.toLowerCase().includes(needle)) : data;
     const head = `${label ? `VALUES ${label}` : 'LABELS'}  ·  ${all.length}${contains ? ` containing "${contains}"` : ''}  ·  ${ds.name}${selector ? `  ·  ${selector}` : ''}`;
@@ -138,7 +165,7 @@ tool(
       '',
       'Metric queries return series: sum by (level) (count_over_time({app="api"} |= "error" [5m])); also rate, bytes_over_time, and quantile_over_time(0.95, {app="api"} | json | unwrap duration [5m]) by (route). `step` sets the distance between points.',
       '',
-      'Output: a header with result type, datasource and range (local time). Log results list the labels shared by all streams once, then one line per entry: "<time>  [sN]  <line>", where sN points to the stream legend when several streams match. Lines longer than `maxLineLength` are cut with "… [+N chars]". When the limit is reached, the footer gives the `to` (or `from`) of the next page. Metric results print each series\' labels followed by "<time>  <value>" rows.',
+      'Output: a header with result type, datasource and range (local time). Log results list the labels shared by all streams once, then one line per entry: "<time>  [sN]  <line>", where sN points to the stream legend when several streams match. Lines longer than `maxLineLength` are cut at the end (`truncate: "tail"`, default) or in the middle keeping start and end (`truncate: "middle"`). Pass `extract` (a JS regex) to print only matching fragments from huge lines instead of the whole payload. When the limit is reached, the footer gives the `to` (or `from`) of the next page. Metric results print each series\' labels followed by "<time>  <value>" rows.',
       'Errors start with ERR and carry Loki\'s message: syntax errors with line and column, missing matchers, or too much data (narrow the selector or the range).',
     ].join('\n'),
     inputSchema: {
@@ -149,18 +176,21 @@ tool(
       direction: z.enum(['backward', 'forward']).optional().describe('backward = newest first (default), forward = oldest first.'),
       step: z.string().optional().describe('Metric queries: distance between points, e.g. 30s, 5m, 1h. Omit to let Loki choose.'),
       maxLineLength: z.number().int().min(0).optional().describe('Cut log lines longer than this many characters (default 1000; 0 = never cut).'),
+      truncate: z.enum(['tail', 'middle']).optional().describe('Where to cut lines exceeding `maxLineLength`: "tail" (default, keeps the start) or "middle" (keeps head + tail).'),
+      extract: z.string().min(1).optional().describe('Optional JS regex applied to each log line; prints only the matching fragments (e.g. "shippingDataInfo.{0,400}|purpose.{0,40}") instead of the full line.'),
       link: z.boolean().optional().describe('Also return a Grafana Explore link with this query and range, to share or open in the browser.'),
       datasource: DATASOURCE,
     },
   },
-  async ({ query, from = 'now-1h', to = 'now', limit = 100, direction = 'backward', step, maxLineLength = 1000, link = false, datasource: name }) => {
+  async ({ query, from = 'now-1h', to = 'now', limit = 100, direction = 'backward', step, maxLineLength = 1000, truncate = 'tail', extract, link = false, datasource: name }) => {
     const ds = await datasource(name);
     const start = toNs(from);
-    const end = toNs(to);
+    const end = toNs(to, { endOfDay: true });
     if (start >= end) throw new Error('`from` must be earlier than `to`.');
-    const { data } = await loki(ds, 'query_range', { query, start, end, limit, direction, ...(step && { step }) });
+    const matcher = compileExtract(extract);
+    const { data } = await lokiRange(ds, { query, start, end, limit, direction, step });
     const head = `${data.resultType.toUpperCase()}  ·  ${ds.name}  ·  ${stamp(nsToMs(start))} → ${stamp(nsToMs(end))} ${TZ}`;
-    const body = data.resultType === 'streams' ? streams(data.result, { limit, direction, maxLineLength }) : series(data.resultType, data.result);
+    const body = data.resultType === 'streams' ? streams(data.result, { limit, direction, maxLineLength, truncate, matcher }) : series(data.resultType, data.result);
     return [head, '', ...body, ...(link ? ['', `Explore: ${exploreUrl(ds, query, from, to)}`] : [])].join('\n');
   },
 );
